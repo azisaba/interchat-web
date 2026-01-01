@@ -18,11 +18,10 @@ export function useInterchatUnreadCounts() {
 
   useEffect(() => {
     ensureUnreadLoaded();
-    return () => {
-      subscribe(() => {
-        setCounts(getUnreadCounts());
-      });
-    }
+    const unsubscribe = subscribe(() => {
+      setCounts(getUnreadCounts());
+    });
+    return unsubscribe;
   }, []);
 
   return counts;
@@ -35,11 +34,10 @@ export function useInterchatMessages(guildId: number) {
 
   useEffect(() => {
     setMessages(getMessagesForGuild(guildId));
-    return () => {
-      subscribe(() => {
-        setMessages(getMessagesForGuild(guildId));
-      });
-    }
+    const unsubscribe = subscribe(() => {
+      setMessages(getMessagesForGuild(guildId));
+    });
+    return unsubscribe;
   }, [guildId]);
 
   return messages;

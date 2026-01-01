@@ -85,12 +85,14 @@ export default function GuildChatPage() {
           transliterated_message: row.transliterated_message,
           timestamp: row.timestamp,
         }));
+        console.log(mapped)
         setMessagesForGuild(guildId, mapped);
         if (rows.length < 50) {
           setHasMore(false);
         }
       })
-      .catch(() => {
+      .catch((e) => {
+        console.error(e)
         loadedHistoryRef.current.delete(guildId);
       });
   }, [guildId, token, messages.length]);
