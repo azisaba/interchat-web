@@ -71,6 +71,30 @@ export class InterchatGuild {
     const match = url.pathname.match(/^\/api\/guilds\/(\d+)\/stream$/);
     const guildId = match ? Number(match[1]) : Number.NaN;
     if (Number.isNaN(guildId)) {
+      if (url.pathname === "/internal/broadcast") {
+        const body = (await request.json().catch(() => null)) as
+          | {messages?: Array<Record<string, unknown>>}
+          | null;
+        if (!body?.messages || !Array.isArray(body.messages)) {
+          return new Response("Invalid payload", {status: 400});
+        }
+        for (const message of body.messages) {
+          const guildValue = Number(message.guild_id);
+          if (!Number.isFinite(guildValue)) continue;
+          const payload = JSON.stringify(message);
+          for (const ws of this.sockets) {
+            try {
+              const wsMeta = this.socketMeta.get(ws);
+              if (wsMeta?.guildId !== guildValue) continue;
+              ws.send(payload);
+            } catch {
+              this.sockets.delete(ws);
+              this.socketMeta.delete(ws);
+            }
+          }
+        }
+        return new Response("OK");
+      }
       return new Response("Invalid guild", {status: 400});
     }
 
