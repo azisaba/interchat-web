@@ -11,6 +11,9 @@ const MAX_MESSAGES_PER_GUILD = 200;
 const listeners = new Set<Listener>();
 let hasLoadedUnread = false;
 
+const EMPTY_MESSAGES: InterChatGuildMessage[] = [];
+const EMPTY_UNREAD: Record<number, number> = {};
+
 let state: StoreState = {
   messagesByGuild: {},
   unreadByGuild: {},
@@ -53,11 +56,11 @@ export function subscribe(listener: Listener) {
 }
 
 export function getUnreadCounts() {
-  return state.unreadByGuild;
+  return Object.keys(state.unreadByGuild).length > 0 ? state.unreadByGuild : EMPTY_UNREAD;
 }
 
 export function getMessagesForGuild(guildId: number) {
-  return state.messagesByGuild[guildId] ?? [];
+  return state.messagesByGuild[guildId] ?? EMPTY_MESSAGES;
 }
 
 export function setMessagesForGuild(guildId: number, messages: InterChatGuildMessage[]) {

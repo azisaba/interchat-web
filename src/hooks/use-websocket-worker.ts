@@ -82,7 +82,7 @@ export default function useWebsocketWorker() {
   );
 
   useEffect(() => {
-    const worker = getWorker();
+    getWorker();
     sharedRefCount += 1;
     const listener: Listener = (message) => {
       switch (message.type) {

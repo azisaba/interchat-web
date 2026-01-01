@@ -9,7 +9,7 @@ import {markGuildRead, useInterchatMessages} from "@/hooks/use-interchat-store";
 import {useGuildMembers} from "@/hooks/use-azisaba";
 import {prependMessagesForGuild, setMessagesForGuild} from "@/lib/interchat-store";
 import useLocalStorage from "@/hooks/use-local-storage";
-import {stripColor} from "@/util/chat-color";
+import {renderChatColors} from "@/util/chat-color";
 
 export default function GuildChatPage() {
   const params = useParams();
@@ -25,15 +25,17 @@ export default function GuildChatPage() {
   const members = useGuildMembers(guildId);
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadedHistoryRef = useRef(new Set<number>());
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [loadingOlderByGuild, setLoadingOlderByGuild] = useState<Record<number, boolean>>({});
+  const [hasMoreByGuild, setHasMoreByGuild] = useState<Record<number, boolean>>({});
+  const loadingOlder = loadingOlderByGuild[guildId] ?? false;
+  const hasMore = hasMoreByGuild[guildId] ?? true;
 
   const resolveMemberName = (uuid: string) => {
     const member = members.find(m => m.uuid === uuid);
     if (!member) {
       return uuid;
     }
-    return stripColor(member.nickname ?? member.name)
+    return renderChatColors(member.nickname ?? member.name)
   }
 
   const resolveTimestamp = (timestamp?: number) => {
@@ -88,7 +90,7 @@ export default function GuildChatPage() {
         console.log(mapped)
         setMessagesForGuild(guildId, mapped);
         if (rows.length < 50) {
-          setHasMore(false);
+          setHasMoreByGuild((prev) => ({...prev, [guildId]: false}));
         }
       })
       .catch((e) => {
@@ -96,10 +98,6 @@ export default function GuildChatPage() {
         loadedHistoryRef.current.delete(guildId);
       });
   }, [guildId, token, messages.length]);
-
-  useEffect(() => {
-    setHasMore(true);
-  }, [guildId]);
 
   useEffect(() => {
     if (!listRef.current) return;
@@ -123,10 +121,10 @@ export default function GuildChatPage() {
       .filter((id): id is number => id !== undefined)
       .reduce((min, id) => Math.min(min, id), Number.POSITIVE_INFINITY);
     if (!Number.isFinite(oldestId)) {
-      setHasMore(false);
+      setHasMoreByGuild((prev) => ({...prev, [guildId]: false}));
       return;
     }
-    setLoadingOlder(true);
+    setLoadingOlderByGuild((prev) => ({...prev, [guildId]: true}));
     fetch(`/api/messages?guildId=${guildId}&beforeId=${oldestId}`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -159,11 +157,11 @@ export default function GuildChatPage() {
         }));
         prependMessagesForGuild(guildId, mapped);
         if (rows.length < 50) {
-          setHasMore(false);
+          setHasMoreByGuild((prev) => ({...prev, [guildId]: false}));
         }
       })
       .finally(() => {
-        setLoadingOlder(false);
+        setLoadingOlderByGuild((prev) => ({...prev, [guildId]: false}));
       });
   };
 
@@ -201,7 +199,7 @@ export default function GuildChatPage() {
               <div className="text-xs text-muted-foreground">
                 {resolveMemberName(message.sender)}@{message.server}{resolveTimestamp(message.timestamp)}
               </div>
-              <div className="whitespace-pre-wrap">{message.message}</div>
+              <div className="whitespace-pre-wrap">{renderChatColors(message.message)}</div>
               {message.transliterated_message ? (
                 <div className="text-xs italic text-muted-foreground">
                   {message.transliterated_message}
