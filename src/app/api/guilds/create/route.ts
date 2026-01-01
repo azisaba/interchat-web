@@ -16,6 +16,21 @@ export async function POST(request: Request) {
   }
   await ensurePlayerRow(env, player);
 
+  const cooldownResult = await env.interchat
+    .prepare("SELECT last_guild_created_at FROM players WHERE id = ?")
+    .bind(player.uuid)
+    .all<{last_guild_created_at: number}>();
+  const lastCreatedAt = Number(cooldownResult.results?.[0]?.last_guild_created_at ?? 0);
+  const cooldownMs = 14 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  if (lastCreatedAt > 0 && now - lastCreatedAt < cooldownMs) {
+    const remainingMs = Math.max(0, cooldownMs - (now - lastCreatedAt));
+    return NextResponse.json(
+      {error: "Guild creation cooldown", retry_after_ms: remainingMs},
+      {status: 429}
+    );
+  }
+
   const body = (await request.json().catch(() => null)) as {name?: string} | null;
   const name = body?.name?.trim() ?? "";
   if (!GUILD_NAME_PATTERN.test(name) || BLOCKED_GUILD_NAMES.has(name.toLowerCase())) {
@@ -46,8 +61,8 @@ export async function POST(request: Request) {
     .bind(guildId, player.uuid, "OWNER")
     .run();
   await env.interchat
-    .prepare("UPDATE players SET selected_guild = ? WHERE id = ?")
-    .bind(guildId, player.uuid)
+    .prepare("UPDATE players SET selected_guild = ?, last_guild_created_at = ? WHERE id = ?")
+    .bind(guildId, now, player.uuid)
     .run();
 
   await submitGuildLog(env, guildId, player.uuid, player.username, "Created guild");

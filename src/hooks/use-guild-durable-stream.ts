@@ -12,6 +12,7 @@ type ConnectionState = {
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   status: "idle" | "connecting" | "open" | "closed" | "error";
+  listeners: Set<(status: ConnectionState["status"]) => void>;
 };
 
 const connections = new Map<number, ConnectionState>();
@@ -40,9 +41,16 @@ function getConnection(guildId: number) {
     reconnectAttempt: 0,
     reconnectTimer: null,
     status: "idle",
+    listeners: new Set(),
   };
   connections.set(guildId, created);
   return created;
+}
+
+function notifyStatus(connection: ConnectionState) {
+  for (const listener of connection.listeners) {
+    listener(connection.status);
+  }
 }
 
 function scheduleReconnect(guildId: number) {
@@ -64,6 +72,7 @@ function connect(guildId: number) {
 
   connection.ws?.close();
   connection.status = "connecting";
+  notifyStatus(connection);
   const url = buildWsUrl(`/api/guilds/${guildId}/stream`);
   const token = connection.token ?? "";
   const encodedToken = typeof btoa === "function" ? encodeBase64Url(token) : token;
@@ -90,16 +99,19 @@ function connect(guildId: number) {
   ws.onopen = () => {
     connection.reconnectAttempt = 0;
     connection.status = "open";
+    notifyStatus(connection);
   };
 
   ws.onclose = () => {
     connection.status = "closed";
+    notifyStatus(connection);
     if (!connection.token || connection.refCount === 0) return;
     scheduleReconnect(guildId);
   };
 
   ws.onerror = () => {
     connection.status = "error";
+    notifyStatus(connection);
     if (!connection.token || connection.refCount === 0) return;
     scheduleReconnect(guildId);
   };
@@ -112,6 +124,7 @@ function ensureConnection(guildId: number, token: string | null) {
     connection.ws?.close();
     connection.ws = null;
     connection.status = "closed";
+    notifyStatus(connection);
     return;
   }
     if (connection.token !== token) {
@@ -147,17 +160,19 @@ export default function useGuildDurableStream(guildId: number) {
 
   useEffect(() => {
     if (Number.isNaN(guildId)) return;
+    const connection = getConnection(guildId);
+    connection.listeners.add(setStatus);
+    setStatus(connection.status);
     retain(guildId);
-    return () => release(guildId);
+    return () => {
+      connection.listeners.delete(setStatus);
+      release(guildId);
+    };
   }, [guildId]);
 
   useEffect(() => {
     if (Number.isNaN(guildId)) return;
     ensureConnection(guildId, token);
-    Promise.resolve().then(() => {
-      const connection = getConnection(guildId);
-      setStatus(connection.status);
-    });
   }, [guildId, token]);
 
   const sendToDurableObject = (payload: unknown) => {
