@@ -1,0 +1,58 @@
+CREATE TABLE IF NOT EXISTS guilds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  format TEXT NOT NULL,
+  capacity INTEGER NOT NULL DEFAULT 100,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  open INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS guild_members (
+  guild_id INTEGER NOT NULL,
+  uuid TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'MEMBER',
+  nickname TEXT DEFAULT NULL,
+  hidden_by_member INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, uuid)
+);
+
+CREATE TABLE IF NOT EXISTS guild_invites (
+  guild_id INTEGER NOT NULL,
+  target TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, target)
+);
+
+CREATE TABLE IF NOT EXISTS guild_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id INTEGER NOT NULL,
+  actor TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+  actor_name TEXT NOT NULL,
+  time INTEGER NOT NULL,
+  description TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS guild_bans (
+  guild_id INTEGER NOT NULL,
+  uuid TEXT NOT NULL,
+  reason TEXT,
+  reason_public INTEGER NOT NULL,
+  UNIQUE (guild_id, uuid)
+);
+
+CREATE TABLE IF NOT EXISTS players (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  selected_guild INTEGER NOT NULL DEFAULT -1,
+  focused_guild INTEGER NOT NULL DEFAULT -1,
+  accepting_invites INTEGER NOT NULL DEFAULT 1,
+  translate_kana INTEGER NOT NULL DEFAULT 1,
+  hide_all_until INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS blocked_users (
+  id TEXT NOT NULL,
+  blocked_uuid TEXT NOT NULL,
+  PRIMARY KEY (id, blocked_uuid)
+);

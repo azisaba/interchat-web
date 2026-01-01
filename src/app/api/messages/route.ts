@@ -1,12 +1,6 @@
 import {NextResponse} from "next/server";
 import {getCloudflareContext} from "@opennextjs/cloudflare";
-
-const API_DOWN_GRACE_MS = 30 * 60 * 1000;
-
-type MembershipCacheRow = {
-  ok: number;
-  checked_at: number;
-};
+import {ensurePlayerRow, getBearerToken, getOrCreatePlayer, isGuildMember} from "@/lib/server/interchat-auth";
 
 export async function GET(request: Request) {
   const {env} = getCloudflareContext();
@@ -21,89 +15,17 @@ export async function GET(request: Request) {
     return NextResponse.json({error: "Invalid beforeId"}, {status: 400});
   }
 
-  const rawAuth = request.headers.get("authorization");
-  if (!rawAuth) {
+  const token = getBearerToken(request);
+  if (!token) {
     return NextResponse.json({error: "Missing Authorization header"}, {status: 401});
   }
-  const token = rawAuth.startsWith("Bearer ") ? rawAuth.slice(7).trim() : rawAuth.trim();
-  if (!token) {
-    return NextResponse.json({error: "Missing token"}, {status: 401});
+  const player = await getOrCreatePlayer(env, token);
+  if (!player) {
+    return NextResponse.json({error: "Unauthorized"}, {status: 401});
   }
-
-  let uuid: string | null = null;
-  let username: string | null = null;
-  try {
-    const meResponse = await fetch("https://api-ktor.azisaba.net/players/me", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (meResponse.ok) {
-      const me = (await meResponse.json()) as {uuid?: string; name?: string};
-      uuid = me.uuid ?? null;
-      username = me.name ?? null;
-      if (uuid && username) {
-        await env.interchat
-          .prepare("INSERT OR REPLACE INTO interchat_players (key, uuid, username) VALUES (?, ?, ?)")
-          .bind(token, uuid, username)
-          .run();
-      }
-    }
-  } catch {
-    // fall back to cached player info
-  }
-  if (!uuid) {
-    const cached = await env.interchat
-      .prepare("SELECT uuid, username FROM interchat_players WHERE key = ?")
-      .bind(token)
-      .all<{uuid: string; username: string}>();
-    const row = cached.results?.[0] ?? null;
-    if (!row) {
-      return NextResponse.json({error: "Unauthorized"}, {status: 401});
-    }
-    uuid = row.uuid;
-    username = row.username;
-  }
-
-  let isMember: boolean | null = null;
-  try {
-    const membersResponse = await fetch(
-      `https://api-ktor.azisaba.net/interchat/guilds/${guildId}/members`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-    if (membersResponse.ok) {
-      const members = (await membersResponse.json()) as Array<{uuid: string}>;
-      isMember = members.some((member) => member.uuid === uuid);
-      await env.interchat
-        .prepare(
-          "INSERT OR REPLACE INTO interchat_memberships (key, guild_id, ok, checked_at) VALUES (?, ?, ?, ?)"
-        )
-        .bind(token, guildId, isMember ? 1 : 0, Date.now())
-        .run();
-    }
-  } catch {
-    // fall back to cached membership
-  }
-  if (isMember === null) {
-    const cached = await env.interchat
-      .prepare(
-        "SELECT ok, checked_at FROM interchat_memberships WHERE key = ? AND guild_id = ?"
-      )
-      .bind(token, guildId)
-      .all<MembershipCacheRow>();
-    const row = cached.results?.[0] ?? null;
-    if (!row) {
-      return NextResponse.json({error: "Forbidden"}, {status: 403});
-    }
-    const withinGrace = Date.now() - row.checked_at <= API_DOWN_GRACE_MS;
-    if (!withinGrace || row.ok !== 1) {
-      return NextResponse.json({error: "Forbidden"}, {status: 403});
-    }
-  } else if (!isMember) {
+  await ensurePlayerRow(env, player);
+  const member = await isGuildMember(env, guildId, player.uuid);
+  if (!member) {
     return NextResponse.json({error: "Forbidden"}, {status: 403});
   }
 

@@ -1,0 +1,11 @@
+- Remaining InterChat migration work
+- **Guild info + stats**: port `executeInfo` to an API route (guild summary, members list, open/format, member counts).
+- **Hide player**: implement per-target hide logic if distinct from global block (match `hide-player` behavior).
+- **Tell/DM flow**: port `executeTell` (respect block list, transliteration, format).
+- **Hide-all enforcement**: ensure message delivery checks `hide_all_until` when reading/streaming messages.
+- **Admin flows**: review `GuildAdminCommand` for any missing endpoints (rename, capacity, purge done; confirm logs/soft delete parity).
+- **Invite UX**: add endpoints/UI for listing invites and expiring them server-side.
+- **Bans UX**: add list endpoint for guild bans.
+- **Cache/index tuning**: consider D1 indices for `guild_members(guild_id, uuid)`, `guild_logs(guild_id, id)`, `guild_invites(guild_id, target)`.
+- **Client UI**: add controls for nick/force-nick, hide guild, hide all, block list management.
+- **Telemetry**: add structured logging for DO + API errors.

@@ -38,7 +38,7 @@ export function useGuildList(): InterChatGuild[] {
       Promise.resolve().then(() => setGuildList([]));
       return;
     }
-    get("https://api-ktor.azisaba.net/interchat/guilds/list")
+    get("/api/guilds/list")
       .then(res => {
         const list = res as Array<InterChatGuild>;
         localStorage.setItem("guildListCache", JSON.stringify(list));
@@ -86,7 +86,7 @@ export function useGuildMembers(guildId: number) {
     }
     const cacheKey = `guildMembersCache:${guildId}`;
     const tsKey = `guildMembersCacheTs:${guildId}`;
-    get(`https://api-ktor.azisaba.net/interchat/guilds/${guildId}/members`)
+    get(`/api/guilds/${guildId}/members`)
       .then(res => {
         const list = res as Array<InterChatGuildMember>;
         localStorage.setItem(cacheKey, JSON.stringify(list));
