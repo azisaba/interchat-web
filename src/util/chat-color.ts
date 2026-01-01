@@ -208,6 +208,15 @@ function isImageUrl(value: string) {
   }
 }
 
+function isDirectImageHost(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname === "cdn.discordapp.com" || url.hostname === "cdn.discord.com";
+  } catch {
+    return false;
+  }
+}
+
 export function renderChatMessage(input: string) {
   const parts: React.ReactNode[] = [];
   const urlRegex = /https?:\/\/\S+/g;
@@ -222,7 +231,9 @@ export function renderChatMessage(input: string) {
     const rawUrl = match[0];
     const trimmedUrl = trimTrailingPunctuation(rawUrl);
     if (isImageUrl(trimmedUrl)) {
-      const proxied = `/api/image-proxy?url=${encodeURIComponent(trimmedUrl)}`;
+      const proxied = isDirectImageHost(trimmedUrl)
+        ? trimmedUrl
+        : `/api/image-proxy?url=${encodeURIComponent(trimmedUrl)}`;
       parts.push(
         React.createElement("img", {
           key: `chat-image-${match.index}`,
