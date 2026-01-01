@@ -9,7 +9,7 @@ import {markGuildRead, useInterchatMessages} from "@/hooks/use-interchat-store";
 import {useGuildMembers} from "@/hooks/use-azisaba";
 import {prependMessagesForGuild, setMessagesForGuild} from "@/lib/interchat-store";
 import useLocalStorage from "@/hooks/use-local-storage";
-import {renderChatColors} from "@/util/chat-color";
+import {renderChatColors, renderChatMessage} from "@/util/chat-color";
 
 export default function GuildChatPage() {
   const params = useParams();
@@ -199,7 +199,7 @@ export default function GuildChatPage() {
               <div className="text-xs text-muted-foreground">
                 {resolveMemberName(message.sender)}@{message.server}{resolveTimestamp(message.timestamp)}
               </div>
-              <div className="whitespace-pre-wrap">{renderChatColors(message.message)}</div>
+              <div className="whitespace-pre-wrap">{renderChatMessage(message.message)}</div>
               {message.transliterated_message ? (
                 <div className="text-xs italic text-muted-foreground">
                   {message.transliterated_message}

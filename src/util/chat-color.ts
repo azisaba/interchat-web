@@ -189,3 +189,59 @@ export function renderChatColors(input: string) {
     );
   });
 }
+
+function trimTrailingPunctuation(value: string) {
+  let result = value;
+  while (/[),.!?;]+$/.test(result)) {
+    result = result.slice(0, -1);
+  }
+  return result;
+}
+
+function isImageUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const ext = url.pathname.split(".").pop()?.toLowerCase();
+    return ext !== undefined && ["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(ext);
+  } catch {
+    return false;
+  }
+}
+
+export function renderChatMessage(input: string) {
+  const parts: React.ReactNode[] = [];
+  const urlRegex = /https?:\/\/\S+/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = urlRegex.exec(input)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(...renderChatColors(input.slice(lastIndex, match.index)));
+    }
+
+    const rawUrl = match[0];
+    const trimmedUrl = trimTrailingPunctuation(rawUrl);
+    if (isImageUrl(trimmedUrl)) {
+      const proxied = `/api/image-proxy?url=${encodeURIComponent(trimmedUrl)}`;
+      parts.push(
+        React.createElement("img", {
+          key: `chat-image-${match.index}`,
+          src: proxied,
+          alt: "image",
+          loading: "lazy",
+          className: "mt-2 max-w-full rounded-md border",
+        })
+      );
+    } else {
+      parts.push(...renderChatColors(rawUrl));
+    }
+
+    lastIndex = match.index + rawUrl.length;
+  }
+
+  if (lastIndex < input.length) {
+    parts.push(...renderChatColors(input.slice(lastIndex)));
+  }
+
+  return parts;
+}
