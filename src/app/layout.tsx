@@ -6,6 +6,7 @@ import {SidebarProvider, SidebarTrigger} from "@/components/ui/sidebar";
 import AppSidebar from "@/components/app-sidebar";
 import {Toaster} from "@/components/ui/sonner";
 import InterchatStreamConnector from "@/components/interchat-stream-connector";
+import ThemeProvider from "@/components/theme-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,15 +33,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <SidebarProvider>
-          <InterchatStreamConnector />
-          <AppSidebar />
-          <main className="w-full p-4">
-            <SidebarTrigger />
-            {children}
-            <Toaster />
-          </main>
-        </SidebarProvider>
+        <ThemeProvider>
+          <SidebarProvider>
+            <InterchatStreamConnector />
+            <AppSidebar />
+            <main className="w-full p-4">
+              <SidebarTrigger />
+              {children}
+              <Toaster />
+            </main>
+          </SidebarProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

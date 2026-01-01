@@ -33,6 +33,7 @@ import {Input} from "@/components/ui/input";
 import {Spinner} from "@/components/ui/spinner";
 import {toast} from "sonner";
 import useLocalStorage from "@/hooks/use-local-storage";
+import ThemeToggle from "@/components/theme-toggle";
 
 export default function NavUser() {
   const [tokenField, setTokenField] = useState("");
@@ -109,6 +110,8 @@ export default function NavUser() {
                 <LogIn />
                 ログイン
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <ThemeToggle />
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem>
@@ -198,6 +201,8 @@ export default function NavUser() {
               データの編集
             </DropdownMenuItem>
           </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <ThemeToggle />
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={doLogout}>
             <LogOut />
