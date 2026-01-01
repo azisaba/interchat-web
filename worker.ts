@@ -17,6 +17,7 @@ type MembershipCache = {
 };
 
 const MEMBERSHIP_CACHE_MS = 45000;
+const API_DOWN_GRACE_MS = 30 * 60 * 1000;
 
 function parseBearerToken(headerValue: string | null) {
   if (!headerValue) return null;
@@ -223,22 +224,31 @@ export class InterchatGuild {
       return cached.ok;
     }
 
-    const response = await fetch(
-      `https://api-ktor.azisaba.net/interchat/guilds/${this.guildId}/members`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    try {
+      const response = await fetch(
+        `https://api-ktor.azisaba.net/interchat/guilds/${this.guildId}/members`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      if (!response.ok) {
+        if (cached && cached.ok && now - cached.ts < API_DOWN_GRACE_MS) {
+          return true;
+        }
+        return false;
       }
-    );
-    if (!response.ok) {
-      await this.state.storage.put(cacheKey, {ok: false, ts: now});
+      const members = (await response.json()) as Array<{uuid: string}>;
+      const ok = members.some((member) => member.uuid === uuid);
+      await this.state.storage.put(cacheKey, {ok, ts: now});
+      return ok;
+    } catch {
+      if (cached && cached.ok && now - cached.ts < API_DOWN_GRACE_MS) {
+        return true;
+      }
       return false;
     }
-    const members = (await response.json()) as Array<{uuid: string}>;
-    const ok = members.some((member) => member.uuid === uuid);
-    await this.state.storage.put(cacheKey, {ok, ts: now});
-    return ok;
   }
 }
 
