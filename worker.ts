@@ -51,28 +51,28 @@ function parseTokenFromProtocols(headerValue: string | null) {
   return {token: null, protocol: null};
 }
 
+type SocketMeta = {
+  player: PlayerRecord;
+  guildId: number;
+};
+
 export class InterchatGuild {
   private state: DurableObjectState;
   private env: Env;
-  private guildId: number;
   private sockets = new Set<WebSocket>();
-  private socketUsers = new Map<WebSocket, PlayerRecord>();
+  private socketMeta = new Map<WebSocket, SocketMeta>();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
-    this.guildId = Number.NaN;
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/api\/guilds\/(\d+)\/stream$/);
-    if (match) {
-      this.guildId = Number(match[1]);
-    }
-    if (Number.isNaN(this.guildId)) {
-      const name = this.state.id.name ?? "";
-      this.guildId = Number(name);
+    const guildId = match ? Number(match[1]) : Number.NaN;
+    if (Number.isNaN(guildId)) {
+      return new Response("Invalid guild", {status: 400});
     }
 
     if (request.headers.get("upgrade") !== "websocket") {
@@ -89,9 +89,9 @@ export class InterchatGuild {
       protocol = parsed.protocol;
     }
 
-    if (!token || Number.isNaN(this.guildId)) {
+    if (!token) {
       console.log("DO: missing token or invalid guild", {
-        guildId: this.guildId,
+        guildId,
         hasToken: !!token,
       });
       return new Response("Unauthorized", {status: 401});
@@ -104,10 +104,10 @@ export class InterchatGuild {
       });
       return new Response("Unauthorized", {status: 401});
     }
-    const isMember = await this.checkMembership(token, player.uuid);
+    const isMember = await this.checkMembership(token, player.uuid, guildId);
     if (!isMember) {
       console.log("DO: membership check failed", {
-        guildId: this.guildId,
+        guildId,
         uuid: player.uuid,
       });
       return new Response("Forbidden", {status: 403});
@@ -118,18 +118,18 @@ export class InterchatGuild {
     const server = pair[1];
     server.accept();
     this.sockets.add(server);
-    this.socketUsers.set(server, player);
+    this.socketMeta.set(server, {player, guildId});
 
     server.addEventListener("message", (event) => {
       this.handleMessage(server, event);
     });
     server.addEventListener("close", () => {
       this.sockets.delete(server);
-      this.socketUsers.delete(server);
+      this.socketMeta.delete(server);
     });
     server.addEventListener("error", () => {
       this.sockets.delete(server);
-      this.socketUsers.delete(server);
+      this.socketMeta.delete(server);
     });
 
     const response = new Response(null, {
@@ -170,8 +170,8 @@ export class InterchatGuild {
   }
 
   private async handleMessage(socket: WebSocket, event: MessageEvent) {
-    const player = this.socketUsers.get(socket);
-    if (!player) return;
+    const meta = this.socketMeta.get(socket);
+    if (!meta) return;
     const data = typeof event.data === "string" ? event.data : "";
     if (!data) return;
     let parsed: {type?: string; guildId?: number; message?: string} | null = null;
@@ -182,7 +182,7 @@ export class InterchatGuild {
     }
     if (!parsed || parsed.type !== "message") return;
     if (!parsed.message || typeof parsed.message !== "string") return;
-    if (parsed.guildId !== this.guildId) return;
+    if (parsed.guildId !== meta.guildId) return;
 
     const timestamp = Date.now();
     // TODO: re-enable once DO is the only writer.
@@ -198,9 +198,9 @@ export class InterchatGuild {
     const payload = JSON.stringify({
       type: "guild_message",
       id,
-      guild_id: this.guildId,
+      guild_id: meta.guildId,
       server: "Web",
-      sender: player.uuid,
+      sender: meta.player.uuid,
       message: parsed.message,
       transliterated_message: null,
       timestamp,
@@ -208,16 +208,18 @@ export class InterchatGuild {
 
     for (const ws of this.sockets) {
       try {
+        const wsMeta = this.socketMeta.get(ws);
+        if (wsMeta?.guildId !== meta.guildId) continue;
         ws.send(payload);
       } catch {
         this.sockets.delete(ws);
-        this.socketUsers.delete(ws);
+        this.socketMeta.delete(ws);
       }
     }
   }
 
-  private async checkMembership(token: string, uuid: string) {
-    const cacheKey = `member:${token}`;
+  private async checkMembership(token: string, uuid: string, guildId: number) {
+    const cacheKey = `member:${token}:${guildId}`;
     const cached = await this.state.storage.get<MembershipCache>(cacheKey);
     const now = Date.now();
     if (cached && now - cached.ts < MEMBERSHIP_CACHE_MS) {
@@ -226,7 +228,7 @@ export class InterchatGuild {
 
     try {
       const response = await fetch(
-        `https://api-ktor.azisaba.net/interchat/guilds/${this.guildId}/members`,
+        `https://api-ktor.azisaba.net/interchat/guilds/${guildId}/members`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -257,8 +259,7 @@ const handler = {
     const url = new URL(request.url);
     const streamMatch = url.pathname.match(/^\/api\/guilds\/(\d+)\/stream$/);
     if (streamMatch) {
-      const guildId = streamMatch[1];
-      const id = env.INTERCHAT_GUILD.idFromName(guildId);
+      const id = env.INTERCHAT_GUILD.idFromName("global");
       const stub = env.INTERCHAT_GUILD.get(id);
       return stub.fetch(request);
     }

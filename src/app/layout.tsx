@@ -8,6 +8,7 @@ import {Toaster} from "@/components/ui/sonner";
 import InterchatStreamConnector from "@/components/interchat-stream-connector";
 import ThemeProvider from "@/components/theme-provider";
 import InterchatDurableConnector from "@/components/interchat-durable-connector";
+import MemberSidebar from "@/components/member-sidebar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +45,7 @@ export default function RootLayout({
               {children}
               <Toaster />
             </main>
+            <MemberSidebar />
           </SidebarProvider>
         </ThemeProvider>
       </body>
