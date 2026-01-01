@@ -98,6 +98,19 @@ export function prependMessagesForGuild(
 
 export function appendMessage(message: InterChatGuildMessage) {
   const existing = state.messagesByGuild[message.guild_id] ?? [];
+  if (message.id !== undefined && existing.some((item) => item.id === message.id)) {
+    return;
+  }
+  const last = existing[existing.length - 1];
+  if (
+    last &&
+    last.sender === message.sender &&
+    last.message === message.message &&
+    last.server === message.server &&
+    last.transliterated_message === message.transliterated_message
+  ) {
+    return;
+  }
   const nextMessages = [...existing, message].slice(-MAX_MESSAGES_PER_GUILD);
   state = {
     ...state,

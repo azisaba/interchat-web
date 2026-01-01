@@ -5,6 +5,7 @@ declare namespace Cloudflare {
 	interface Env {
 		interchat: D1Database;
 		ASSETS: Fetcher;
+		INTERCHAT_GUILD: DurableObjectNamespace;
 	}
 }
 interface CloudflareEnv extends Cloudflare.Env {}

@@ -1,5 +1,5 @@
 name = "interchat-web"
-main = ".open-next/worker.js"
+main = "worker.ts"
 compatibility_date = "2025-12-31"
 compatibility_flags = ["nodejs_compat"]
 account_id = "510ea6d43d5506ea7ba8abb4e852d091"
@@ -13,6 +13,13 @@ binding = "interchat"
 database_name = "interchat"
 database_id = "6fd39615-0f51-4f3d-b363-ae2e382178a3"
 remote = true
+
+[durable_objects]
+bindings = [{ name = "INTERCHAT_GUILD", class_name = "InterchatGuild" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["InterchatGuild"]
 
 [observability]
 enabled = true

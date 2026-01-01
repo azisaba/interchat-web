@@ -10,6 +10,7 @@ import {useGuildMembers} from "@/hooks/use-azisaba";
 import {prependMessagesForGuild, setMessagesForGuild} from "@/lib/interchat-store";
 import useLocalStorage from "@/hooks/use-local-storage";
 import {renderChatColors, renderChatMessage} from "@/util/chat-color";
+import useGuildDurableStream from "@/hooks/use-guild-durable-stream";
 
 export default function GuildChatPage() {
   const params = useParams();
@@ -25,6 +26,7 @@ export default function GuildChatPage() {
   const members = useGuildMembers(guildId);
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadedHistoryRef = useRef(new Set<number>());
+  const {sendToDurableObject} = useGuildDurableStream(guildId);
   const [loadingOlderByGuild, setLoadingOlderByGuild] = useState<Record<number, boolean>>({});
   const [hasMoreByGuild, setHasMoreByGuild] = useState<Record<number, boolean>>({});
   const loadingOlder = loadingOlderByGuild[guildId] ?? false;
@@ -110,6 +112,7 @@ export default function GuildChatPage() {
     const trimmed = draft.trim();
     if (!trimmed || Number.isNaN(guildId)) return;
     send(JSON.stringify({type: "message", guildId, message: trimmed}));
+    sendToDurableObject({type: "message", guildId, message: trimmed});
     setDraft("");
   };
 
