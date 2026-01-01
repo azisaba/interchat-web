@@ -17,7 +17,6 @@ type MembershipCache = {
 };
 
 const MEMBERSHIP_CACHE_MS = 45000;
-const API_DOWN_GRACE_MS = 30 * 60 * 1000;
 
 function parseBearerToken(headerValue: string | null) {
   if (!headerValue) return null;
@@ -100,11 +99,11 @@ export class InterchatGuild {
     const player = await this.getPlayer(token);
     if (!player) {
       console.log("DO: token not found in interchat_players", {
-        guildId: this.guildId,
+        guildId,
       });
       return new Response("Unauthorized", {status: 401});
     }
-    const isMember = await this.checkMembership(token, player.uuid, guildId);
+    const isMember = await this.checkMembership(player.uuid, guildId);
     if (!isMember) {
       console.log("DO: membership check failed", {
         guildId,
@@ -149,24 +148,7 @@ export class InterchatGuild {
       .all<PlayerRecord>();
     const existing = result.results?.[0] ?? null;
     if (existing) return existing;
-
-    const response = await fetch("https://api-ktor.azisaba.net/players/me", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const player = (await response.json()) as {uuid?: string; name?: string};
-    if (!player.uuid || !player.name) {
-      return null;
-    }
-    await this.env.interchat
-      .prepare("INSERT OR REPLACE INTO interchat_players (key, uuid, username) VALUES (?, ?, ?)")
-      .bind(token, player.uuid, player.name)
-      .run();
-    return {uuid: player.uuid, username: player.name};
+    return null;
   }
 
   private async handleMessage(socket: WebSocket, event: MessageEvent) {
@@ -185,15 +167,13 @@ export class InterchatGuild {
     if (parsed.guildId !== meta.guildId) return;
 
     const timestamp = Date.now();
-    // TODO: re-enable once DO is the only writer.
-    // const insertResult = await this.env.interchat
-    //   .prepare(
-    //     "INSERT INTO guild_messages (guild_id, server, sender, message, transliterated_message, `timestamp`) VALUES (?, ?, ?, ?, ?, ?)"
-    //   )
-    //   .bind(this.guildId, "Web", player.uuid, parsed.message, null, timestamp)
-    //   .run();
-    // const id = insertResult.meta?.last_row_id ?? undefined;
-    const id = undefined;
+    const insertResult = await this.env.interchat
+      .prepare(
+        "INSERT INTO guild_messages (guild_id, server, sender, message, transliterated_message, `timestamp`) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .bind(meta.guildId, "Web", meta.player.uuid, parsed.message, null, timestamp)
+      .run();
+    const id = insertResult.meta?.last_row_id ?? undefined;
 
     const payload = JSON.stringify({
       type: "guild_message",
@@ -218,39 +198,21 @@ export class InterchatGuild {
     }
   }
 
-  private async checkMembership(token: string, uuid: string, guildId: number) {
-    const cacheKey = `member:${token}:${guildId}`;
+  private async checkMembership(uuid: string, guildId: number) {
+    const cacheKey = `member:${uuid}:${guildId}`;
     const cached = await this.state.storage.get<MembershipCache>(cacheKey);
     const now = Date.now();
     if (cached && now - cached.ts < MEMBERSHIP_CACHE_MS) {
       return cached.ok;
     }
 
-    try {
-      const response = await fetch(
-        `https://api-ktor.azisaba.net/interchat/guilds/${guildId}/members`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      if (!response.ok) {
-        if (cached && cached.ok && now - cached.ts < API_DOWN_GRACE_MS) {
-          return true;
-        }
-        return false;
-      }
-      const members = (await response.json()) as Array<{uuid: string}>;
-      const ok = members.some((member) => member.uuid === uuid);
-      await this.state.storage.put(cacheKey, {ok, ts: now});
-      return ok;
-    } catch {
-      if (cached && cached.ok && now - cached.ts < API_DOWN_GRACE_MS) {
-        return true;
-      }
-      return false;
-    }
+    const result = await this.env.interchat
+      .prepare("SELECT 1 FROM guild_members WHERE guild_id = ? AND uuid = ?")
+      .bind(guildId, uuid)
+      .all<{1: number}>();
+    const ok = (result.results?.length ?? 0) > 0;
+    await this.state.storage.put(cacheKey, {ok, ts: now});
+    return ok;
   }
 }
 

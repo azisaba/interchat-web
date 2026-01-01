@@ -21,22 +21,7 @@ export async function getOrCreatePlayer(env: CloudflareEnv, token: string) {
   if (row) {
     return {uuid: row.uuid, username: row.username, token};
   }
-
-  const response = await fetch("https://api-ktor.azisaba.net/players/me", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!response.ok) return null;
-  const player = (await response.json()) as {uuid?: string; name?: string};
-  if (!player.uuid || !player.name) return null;
-
-  await env.interchat
-    .prepare("INSERT OR REPLACE INTO interchat_players (key, uuid, username) VALUES (?, ?, ?)")
-    .bind(token, player.uuid, player.name)
-    .run();
-
-  return {uuid: player.uuid, username: player.name, token};
+  return null;
 }
 
 export async function ensurePlayerRow(env: CloudflareEnv, player: AuthPlayer) {

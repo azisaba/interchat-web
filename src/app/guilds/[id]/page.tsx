@@ -4,7 +4,6 @@ import {useParams} from "next/navigation";
 import {useEffect, useMemo, useRef, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
-import useWebsocketWorker from "@/hooks/use-websocket-worker";
 import {markGuildRead, useInterchatMessages} from "@/hooks/use-interchat-store";
 import {useGuildMembers} from "@/hooks/use-azisaba";
 import {prependMessagesForGuild, setMessagesForGuild} from "@/lib/interchat-store";
@@ -20,13 +19,12 @@ export default function GuildChatPage() {
     return Number(value);
   }, [params.id]);
   const messages = useInterchatMessages(guildId);
-  const {state, send} = useWebsocketWorker();
   const [token] = useLocalStorage("token");
   const [draft, setDraft] = useState("");
   const members = useGuildMembers(guildId);
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadedHistoryRef = useRef(new Set<number>());
-  const {sendToDurableObject} = useGuildDurableStream(guildId);
+  const {sendToDurableObject, status} = useGuildDurableStream(guildId);
   const [loadingOlderByGuild, setLoadingOlderByGuild] = useState<Record<number, boolean>>({});
   const [hasMoreByGuild, setHasMoreByGuild] = useState<Record<number, boolean>>({});
   const loadingOlder = loadingOlderByGuild[guildId] ?? false;
@@ -106,12 +104,11 @@ export default function GuildChatPage() {
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages.length]);
 
-  const canSend = state === "open";
+  const canSend = status === "open";
 
   const sendMessage = () => {
     const trimmed = draft.trim();
     if (!trimmed || Number.isNaN(guildId)) return;
-    send(JSON.stringify({type: "message", guildId, message: trimmed}));
     sendToDurableObject({type: "message", guildId, message: trimmed});
     setDraft("");
   };

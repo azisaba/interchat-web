@@ -11,6 +11,7 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {toast} from "sonner";
 import {renderChatColors} from "@/util/chat-color";
+import {Crown, Shield} from "lucide-react";
 
 type MemberRow = {
   guild_id: number;
@@ -197,6 +198,13 @@ export default function MemberSidebar() {
           <SidebarMenu>
             {members.map((member) => {
               const displayName = member.nickname || member.name || member.uuid;
+              const username = member.name || member.uuid;
+              const roleIcon =
+                member.role === "OWNER" ? (
+                  <Crown className="size-3 text-amber-500" />
+                ) : member.role === "MODERATOR" ? (
+                  <Shield className="size-3 text-sky-500" />
+                ) : null;
               return (
                 <SidebarMenuItem key={member.uuid}>
                   <div
@@ -210,7 +218,10 @@ export default function MemberSidebar() {
                   >
                     <div className="flex flex-col">
                       <span className="font-medium">{renderChatColors(displayName)}</span>
-                      <span className="text-xs text-muted-foreground">{member.role}</span>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span>{username}</span>
+                        {roleIcon}
+                      </span>
                     </div>
                   </div>
                 </SidebarMenuItem>

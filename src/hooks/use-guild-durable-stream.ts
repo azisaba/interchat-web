@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect} from "react";
+import {useEffect, useState} from "react";
 import useLocalStorage from "@/hooks/use-local-storage";
 import {appendMessage, clearUnread, incrementUnread} from "@/lib/interchat-store";
 import type {InterChatGuildMessage} from "@/types";
@@ -11,6 +11,7 @@ type ConnectionState = {
   refCount: number;
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  status: "idle" | "connecting" | "open" | "closed" | "error";
 };
 
 const connections = new Map<number, ConnectionState>();
@@ -38,6 +39,7 @@ function getConnection(guildId: number) {
     refCount: 0,
     reconnectAttempt: 0,
     reconnectTimer: null,
+    status: "idle",
   };
   connections.set(guildId, created);
   return created;
@@ -61,6 +63,7 @@ function connect(guildId: number) {
   if (connection.ws && connection.ws.readyState === WebSocket.CONNECTING) return;
 
   connection.ws?.close();
+  connection.status = "connecting";
   const url = buildWsUrl(`/api/guilds/${guildId}/stream`);
   const token = connection.token ?? "";
   const encodedToken = typeof btoa === "function" ? encodeBase64Url(token) : token;
@@ -86,14 +89,17 @@ function connect(guildId: number) {
 
   ws.onopen = () => {
     connection.reconnectAttempt = 0;
+    connection.status = "open";
   };
 
   ws.onclose = () => {
+    connection.status = "closed";
     if (!connection.token || connection.refCount === 0) return;
     scheduleReconnect(guildId);
   };
 
   ws.onerror = () => {
+    connection.status = "error";
     if (!connection.token || connection.refCount === 0) return;
     scheduleReconnect(guildId);
   };
@@ -101,12 +107,13 @@ function connect(guildId: number) {
 
 function ensureConnection(guildId: number, token: string | null) {
   const connection = getConnection(guildId);
-    if (!token || token === "null") {
-      connection.token = null;
-      connection.ws?.close();
-      connection.ws = null;
-      return;
-    }
+  if (!token || token === "null") {
+    connection.token = null;
+    connection.ws?.close();
+    connection.ws = null;
+    connection.status = "closed";
+    return;
+  }
     if (connection.token !== token) {
       connection.token = token;
       connection.ws?.close();
@@ -136,6 +143,7 @@ function release(guildId: number) {
 
 export default function useGuildDurableStream(guildId: number) {
   const [token] = useLocalStorage("token");
+  const [status, setStatus] = useState<ConnectionState["status"]>("idle");
 
   useEffect(() => {
     if (Number.isNaN(guildId)) return;
@@ -146,6 +154,10 @@ export default function useGuildDurableStream(guildId: number) {
   useEffect(() => {
     if (Number.isNaN(guildId)) return;
     ensureConnection(guildId, token);
+    Promise.resolve().then(() => {
+      const connection = getConnection(guildId);
+      setStatus(connection.status);
+    });
   }, [guildId, token]);
 
   const sendToDurableObject = (payload: unknown) => {
@@ -155,7 +167,7 @@ export default function useGuildDurableStream(guildId: number) {
     connection.ws.send(JSON.stringify(payload));
   };
 
-  return {sendToDurableObject} as const;
+  return {sendToDurableObject, status} as const;
 }
 
 export function setActiveGuildId(next: number | null) {

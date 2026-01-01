@@ -1,19 +1,25 @@
 "use client";
 
 import useLocalStorage from "@/hooks/use-local-storage";
-import {AzisabaPlayer, InterChatGuild, InterChatGuildMember} from "@/types";
+import {InterChatGuild, InterChatGuildMember, InterChatPlayer} from "@/types";
 import {useEffect, useState} from "react";
 import {get} from "@/util/api";
 
-export function useSelfUser(): AzisabaPlayer | null {
-  const [user, setUser] = useState<AzisabaPlayer | null>(null);
+export function useSelfUser(): InterChatPlayer | null {
+  const [user, setUser] = useState<InterChatPlayer | null>(null);
   const [token] = useLocalStorage("token");
   useEffect(() => {
-    get("https://api-ktor.azisaba.net/players/me").then(res => {
-      setUser(res as AzisabaPlayer);
-    }).catch(() => {
-      setUser(null);
-    });
+    if (!token || token === "null") {
+      Promise.resolve().then(() => setUser(null));
+      return;
+    }
+    get("/api/self")
+      .then(res => {
+        setUser(res as InterChatPlayer);
+      })
+      .catch(() => {
+        setUser(null);
+      });
   }, [token]);
   return user;
 }

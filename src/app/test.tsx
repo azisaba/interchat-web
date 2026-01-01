@@ -1,5 +1,6 @@
 import {headers} from "next/headers";
 import {getCloudflareContext} from "@opennextjs/cloudflare";
+import {getBearerToken, getOrCreatePlayer, isGuildMember} from "@/lib/server/interchat-auth";
 
 export async function getMessages(guildId: string) {
   // Database schema is InterChatGuildMessage without type property and with id property (primary key)
@@ -8,33 +9,12 @@ export async function getMessages(guildId: string) {
   if (!Number.isFinite(id)) return [];
 
   const requestHeaders = await headers();
-  const rawAuth =
-    requestHeaders.get("authorization") ?? requestHeaders.get("Authorization");
-  if (!rawAuth) return [];
-  const token = rawAuth.startsWith("Bearer ") ? rawAuth.slice(7).trim() : rawAuth.trim();
+  const token = getBearerToken(new Request("http://local", {headers: requestHeaders}));
   if (!token) return [];
-
-  const meResponse = await fetch("https://api-ktor.azisaba.net/players/me", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!meResponse.ok) return [];
-  const me = (await meResponse.json()) as {uuid?: string};
-  if (!me.uuid) return [];
-
-  const membersResponse = await fetch(
-    `https://api-ktor.azisaba.net/interchat/guilds/${id}/members`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
-  if (!membersResponse.ok) return [];
-  const members = (await membersResponse.json()) as Array<{uuid: string}>;
-  const isMember = members.some((member) => member.uuid === me.uuid);
-  if (!isMember) return [];
+  const player = await getOrCreatePlayer(env, token);
+  if (!player) return [];
+  const member = await isGuildMember(env, id, player.uuid);
+  if (!member) return [];
 
   const result = await env.interchat
     .prepare(

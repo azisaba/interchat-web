@@ -5,7 +5,6 @@ import React from "react";
 import {SidebarProvider, SidebarTrigger} from "@/components/ui/sidebar";
 import AppSidebar from "@/components/app-sidebar";
 import {Toaster} from "@/components/ui/sonner";
-import InterchatStreamConnector from "@/components/interchat-stream-connector";
 import ThemeProvider from "@/components/theme-provider";
 import InterchatDurableConnector from "@/components/interchat-durable-connector";
 import MemberSidebar from "@/components/member-sidebar";
@@ -37,7 +36,6 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <SidebarProvider>
-            <InterchatStreamConnector />
             <InterchatDurableConnector />
             <AppSidebar />
             <main className="w-full p-4">

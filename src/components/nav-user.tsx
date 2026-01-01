@@ -47,7 +47,7 @@ export default function NavUser() {
   async function doLogin() {
     setLoggingIn(true)
     try {
-      await fetch("https://api-ktor.azisaba.net/players/me", {
+      await fetch("/api/self", {
         headers: {
           "Authorization": "Bearer " + tokenField,
         }

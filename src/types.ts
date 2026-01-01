@@ -54,3 +54,8 @@ export type InterChatGuildMessage = {
   transliterated_message: string | null;
   timestamp?: number;
 }
+
+export type InterChatPlayer = {
+  uuid: string;
+  name: string;
+}
