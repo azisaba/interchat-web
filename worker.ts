@@ -52,7 +52,7 @@ function parseTokenFromProtocols(headerValue: string | null) {
 
 type SocketMeta = {
   player: PlayerRecord;
-  guildId: number;
+  guildIds: Set<number>;
 };
 
 export class InterchatGuild {
@@ -69,8 +69,10 @@ export class InterchatGuild {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/api\/guilds\/(\d+)\/stream$/);
+    const isUserStream = url.pathname === "/api/stream";
     const guildId = match ? Number(match[1]) : Number.NaN;
-    if (Number.isNaN(guildId)) {
+
+    if (!match && !isUserStream) {
       if (url.pathname === "/internal/broadcast") {
         const body = (await request.json().catch(() => null)) as
           | {messages?: Array<Record<string, unknown>>}
@@ -85,7 +87,7 @@ export class InterchatGuild {
           for (const ws of this.sockets) {
             try {
               const wsMeta = this.socketMeta.get(ws);
-              if (wsMeta?.guildId !== guildValue) continue;
+              if (!wsMeta?.guildIds.has(guildValue)) continue;
               ws.send(payload);
             } catch {
               this.sockets.delete(ws);
@@ -127,13 +129,19 @@ export class InterchatGuild {
       });
       return new Response("Unauthorized", {status: 401});
     }
-    const isMember = await this.checkMembership(player.uuid, guildId);
-    if (!isMember) {
-      console.log("DO: membership check failed", {
-        guildId,
-        uuid: player.uuid,
-      });
-      return new Response("Forbidden", {status: 403});
+    let guildIds = new Set<number>();
+    if (!Number.isNaN(guildId)) {
+      const isMember = await this.checkMembership(player.uuid, guildId);
+      if (!isMember) {
+        console.log("DO: membership check failed", {
+          guildId,
+          uuid: player.uuid,
+        });
+        return new Response("Forbidden", {status: 403});
+      }
+      guildIds = new Set([guildId]);
+    } else {
+      guildIds = await this.fetchMemberships(player.uuid, null);
     }
 
     const pair = new WebSocketPair();
@@ -141,7 +149,7 @@ export class InterchatGuild {
     const server = pair[1];
     server.accept();
     this.sockets.add(server);
-    this.socketMeta.set(server, {player, guildId});
+    this.socketMeta.set(server, {player, guildIds});
 
     server.addEventListener("message", (event) => {
       this.handleMessage(server, event);
@@ -180,29 +188,54 @@ export class InterchatGuild {
     if (!meta) return;
     const data = typeof event.data === "string" ? event.data : "";
     if (!data) return;
-    let parsed: {type?: string; guildId?: number; message?: string} | null = null;
+    let parsed:
+      | {type?: string; guildId?: number; message?: string}
+      | {type?: string; guildIds?: number[]}
+      | null = null;
     try {
       parsed = JSON.parse(data);
     } catch {
       return;
     }
-    if (!parsed || parsed.type !== "message") return;
-    if (!parsed.message || typeof parsed.message !== "string") return;
-    if (parsed.guildId !== meta.guildId) return;
+    if (!parsed) return;
+
+    if (parsed.type === "subscribe") {
+      const next =
+        "guildIds" in parsed && Array.isArray(parsed.guildIds) ? parsed.guildIds : [];
+      const filtered = await this.fetchMemberships(meta.player.uuid, next);
+      meta.guildIds = filtered;
+      return;
+    }
+
+    if (parsed.type !== "message") return;
+    if (
+      !("message" in parsed) ||
+      !("guildId" in parsed) ||
+      typeof parsed.message !== "string" ||
+      !Number.isFinite(parsed.guildId)
+    ) {
+      return;
+    }
+    if (!meta.guildIds.has(parsed.guildId!)) return;
+    const stillMember = await this.checkMembership(meta.player.uuid, parsed.guildId!);
+    if (!stillMember) {
+      meta.guildIds.delete(parsed.guildId!);
+      return;
+    }
 
     const timestamp = Date.now();
     const insertResult = await this.env.interchat
       .prepare(
         "INSERT INTO guild_messages (guild_id, server, sender, message, transliterated_message, `timestamp`) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .bind(meta.guildId, "Web", meta.player.uuid, parsed.message, null, timestamp)
+      .bind(parsed.guildId!, "Web", meta.player.uuid, parsed.message, null, timestamp)
       .run();
     const id = insertResult.meta?.last_row_id ?? undefined;
 
     const payload = JSON.stringify({
       type: "guild_message",
       id,
-      guild_id: meta.guildId,
+      guild_id: parsed.guildId!,
       server: "Web",
       sender: meta.player.uuid,
       message: parsed.message,
@@ -213,7 +246,7 @@ export class InterchatGuild {
     for (const ws of this.sockets) {
       try {
         const wsMeta = this.socketMeta.get(ws);
-        if (wsMeta?.guildId !== meta.guildId) continue;
+        if (!wsMeta?.guildIds.has(parsed.guildId!)) continue;
         ws.send(payload);
       } catch {
         this.sockets.delete(ws);
@@ -238,13 +271,37 @@ export class InterchatGuild {
     await this.state.storage.put(cacheKey, {ok, ts: now});
     return ok;
   }
+
+  private async fetchMemberships(uuid: string, guildIds: number[] | null) {
+    if (!guildIds) {
+      const result = await this.env.interchat
+        .prepare("SELECT guild_id FROM guild_members WHERE uuid = ?")
+        .bind(uuid)
+        .all<{guild_id: number}>();
+      return new Set((result.results ?? []).map((row) => row.guild_id));
+    }
+    const requested = guildIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id));
+    if (requested.length === 0) {
+      return new Set<number>();
+    }
+    const placeholders = requested.map(() => "?").join(", ");
+    const result = await this.env.interchat
+      .prepare(
+        `SELECT guild_id FROM guild_members WHERE uuid = ? AND guild_id IN (${placeholders})`
+      )
+      .bind(uuid, ...requested)
+      .all<{guild_id: number}>();
+    return new Set((result.results ?? []).map((row) => row.guild_id));
+  }
 }
 
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
     const streamMatch = url.pathname.match(/^\/api\/guilds\/(\d+)\/stream$/);
-    if (streamMatch) {
+    if (streamMatch || url.pathname === "/api/stream") {
       const id = env.INTERCHAT_GUILD.idFromName("global");
       const stub = env.INTERCHAT_GUILD.get(id);
       return stub.fetch(request);

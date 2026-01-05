@@ -5,14 +5,10 @@ import {usePathname} from "next/navigation";
 import {useGuildList} from "@/hooks/use-azisaba";
 import useGuildDurableStream, {setActiveGuildId} from "@/hooks/use-guild-durable-stream";
 
-function GuildDurableStreamItem({guildId}: {guildId: number}) {
-  useGuildDurableStream(guildId);
-  return null;
-}
-
 export default function InterchatDurableConnector() {
   const guildList = useGuildList();
   const pathname = usePathname();
+  const guildIds = useMemo(() => guildList.map((guild) => guild.id), [guildList]);
 
   const activeId = useMemo(() => {
     const match = pathname.match(/^\/guilds\/(\d+)/);
@@ -25,11 +21,7 @@ export default function InterchatDurableConnector() {
     setActiveGuildId(activeId);
   }, [activeId]);
 
-  return (
-    <>
-      {guildList.map((guild) => (
-        <GuildDurableStreamItem key={guild.id} guildId={guild.id} />
-      ))}
-    </>
-  );
+  useGuildDurableStream(guildIds);
+
+  return null;
 }

@@ -24,7 +24,7 @@ export default function GuildChatPage() {
   const members = useGuildMembers(guildId);
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadedHistoryRef = useRef(new Set<number>());
-  const {sendToDurableObject, status} = useGuildDurableStream(guildId);
+  const {sendToDurableObject, status} = useGuildDurableStream();
   const [loadingOlderByGuild, setLoadingOlderByGuild] = useState<Record<number, boolean>>({});
   const [hasMoreByGuild, setHasMoreByGuild] = useState<Record<number, boolean>>({});
   const loadingOlder = loadingOlderByGuild[guildId] ?? false;

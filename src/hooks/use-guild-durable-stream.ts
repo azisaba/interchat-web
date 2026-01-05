@@ -12,13 +12,23 @@ type ConnectionState = {
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   status: "idle" | "connecting" | "open" | "closed" | "error";
+  desiredGuildIds: number[];
   listeners: Set<(status: ConnectionState["status"]) => void>;
 };
 
-const connections = new Map<number, ConnectionState>();
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
 let activeGuildId: number | null = null;
+const connection: ConnectionState = {
+  ws: null,
+  token: null,
+  refCount: 0,
+  reconnectAttempt: 0,
+  reconnectTimer: null,
+  status: "idle",
+  desiredGuildIds: [],
+  listeners: new Set(),
+};
 
 function buildWsUrl(path: string) {
   if (typeof window === "undefined") return path;
@@ -31,20 +41,8 @@ function encodeBase64Url(value: string) {
   return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function getConnection(guildId: number) {
-  const existing = connections.get(guildId);
-  if (existing) return existing;
-  const created: ConnectionState = {
-    ws: null,
-    token: null,
-    refCount: 0,
-    reconnectAttempt: 0,
-    reconnectTimer: null,
-    status: "idle",
-    listeners: new Set(),
-  };
-  connections.set(guildId, created);
-  return created;
+function getConnection() {
+  return connection;
 }
 
 function notifyStatus(connection: ConnectionState) {
@@ -53,19 +51,19 @@ function notifyStatus(connection: ConnectionState) {
   }
 }
 
-function scheduleReconnect(guildId: number) {
-  const connection = getConnection(guildId);
+function scheduleReconnect() {
+  const connection = getConnection();
   if (connection.reconnectTimer) return;
   const delay = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** connection.reconnectAttempt);
   connection.reconnectAttempt = Math.min(connection.reconnectAttempt + 1, 10);
   connection.reconnectTimer = setTimeout(() => {
     connection.reconnectTimer = null;
-    connect(guildId);
+    connect();
   }, delay);
 }
 
-function connect(guildId: number) {
-  const connection = getConnection(guildId);
+function connect() {
+  const connection = getConnection();
   if (!connection.token) return;
   if (connection.ws && connection.ws.readyState === WebSocket.OPEN) return;
   if (connection.ws && connection.ws.readyState === WebSocket.CONNECTING) return;
@@ -73,7 +71,7 @@ function connect(guildId: number) {
   connection.ws?.close();
   connection.status = "connecting";
   notifyStatus(connection);
-  const url = buildWsUrl(`/api/guilds/${guildId}/stream`);
+  const url = buildWsUrl("/api/stream");
   const token = connection.token ?? "";
   const encodedToken = typeof btoa === "function" ? encodeBase64Url(token) : token;
   const ws = new WebSocket(url, ["bearer-b64", encodedToken]);
@@ -100,25 +98,26 @@ function connect(guildId: number) {
     connection.reconnectAttempt = 0;
     connection.status = "open";
     notifyStatus(connection);
+    sendSubscriptions();
   };
 
   ws.onclose = () => {
     connection.status = "closed";
     notifyStatus(connection);
     if (!connection.token || connection.refCount === 0) return;
-    scheduleReconnect(guildId);
+    scheduleReconnect();
   };
 
   ws.onerror = () => {
     connection.status = "error";
     notifyStatus(connection);
     if (!connection.token || connection.refCount === 0) return;
-    scheduleReconnect(guildId);
+    scheduleReconnect();
   };
 }
 
-function ensureConnection(guildId: number, token: string | null) {
-  const connection = getConnection(guildId);
+function ensureConnection(token: string | null) {
+  const connection = getConnection();
   if (!token || token === "null") {
     connection.token = null;
     connection.ws?.close();
@@ -127,21 +126,21 @@ function ensureConnection(guildId: number, token: string | null) {
     notifyStatus(connection);
     return;
   }
-    if (connection.token !== token) {
-      connection.token = token;
-      connection.ws?.close();
-      connection.ws = null;
-    }
-    connect(guildId);
+  if (connection.token !== token) {
+    connection.token = token;
+    connection.ws?.close();
+    connection.ws = null;
+  }
+  connect();
 }
 
-function retain(guildId: number) {
-  const connection = getConnection(guildId);
+function retain() {
+  const connection = getConnection();
   connection.refCount += 1;
 }
 
-function release(guildId: number) {
-  const connection = getConnection(guildId);
+function release() {
+  const connection = getConnection();
   connection.refCount = Math.max(0, connection.refCount - 1);
   if (connection.refCount === 0) {
     connection.ws?.close();
@@ -150,34 +149,66 @@ function release(guildId: number) {
       clearTimeout(connection.reconnectTimer);
       connection.reconnectTimer = null;
     }
-    connections.delete(guildId);
   }
 }
 
-export default function useGuildDurableStream(guildId: number) {
+function normalizeGuildIds(guildIds: number[]) {
+  const normalized = guildIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id));
+  return Array.from(new Set(normalized)).sort((a, b) => a - b);
+}
+
+function sameIds(a: number[], b: number[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function sendSubscriptions() {
+  const connection = getConnection();
+  if (!connection.ws || connection.ws.readyState !== WebSocket.OPEN) return;
+  connection.ws.send(
+    JSON.stringify({type: "subscribe", guildIds: connection.desiredGuildIds})
+  );
+}
+
+function updateSubscriptions(guildIds: number[]) {
+  const connection = getConnection();
+  const normalized = normalizeGuildIds(guildIds);
+  if (sameIds(connection.desiredGuildIds, normalized)) return;
+  connection.desiredGuildIds = normalized;
+  sendSubscriptions();
+}
+
+export default function useGuildDurableStream(guildIds?: number[]) {
   const [token] = useLocalStorage("token");
   const [status, setStatus] = useState<ConnectionState["status"]>("idle");
 
   useEffect(() => {
-    if (Number.isNaN(guildId)) return;
-    const connection = getConnection(guildId);
+    const connection = getConnection();
     connection.listeners.add(setStatus);
     setStatus(connection.status);
-    retain(guildId);
+    retain();
     return () => {
       connection.listeners.delete(setStatus);
-      release(guildId);
+      release();
     };
-  }, [guildId]);
+  }, []);
 
   useEffect(() => {
-    if (Number.isNaN(guildId)) return;
-    ensureConnection(guildId, token);
-  }, [guildId, token]);
+    ensureConnection(token);
+  }, [token]);
+
+  useEffect(() => {
+    if (!guildIds) return;
+    updateSubscriptions(guildIds);
+  }, [guildIds]);
 
   const sendToDurableObject = (payload: unknown) => {
-    if (Number.isNaN(guildId)) return;
-    const connection = getConnection(guildId);
+    const connection = getConnection();
     if (!connection.ws || connection.ws.readyState !== WebSocket.OPEN) return;
     connection.ws.send(JSON.stringify(payload));
   };
